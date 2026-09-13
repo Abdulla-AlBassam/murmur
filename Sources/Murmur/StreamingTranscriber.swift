@@ -3,17 +3,29 @@ import Foundation
 import Speech
 
 /// One dictation's worth of on-device speech-to-text, built on macOS 26's
-/// SpeechAnalyzer/SpeechTranscriber. Buffers are fed in as they arrive from
-/// the microphone; `finish()` flushes the analyzer and returns the final text.
+/// SpeechAnalyzer/SpeechTranscriber.
+///
+/// Lifecycle: `init` loads the model (slow, hundreds of milliseconds, so the
+/// controller keeps one warm while idle). Audio can be fed the moment the
+/// object exists; it queues in the input stream until `begin()` starts the
+/// analyzer, so nothing said in the first instants is lost. `finish()`
+/// flushes and returns the text; `cancel()` abandons everything.
 final class StreamingTranscriber {
     private let transcriber: SpeechTranscriber
     private let analyzer: SpeechAnalyzer
     private let input: AsyncStream<AnalyzerInput>.Continuation
+    private let stream: AsyncStream<AnalyzerInput>
     private let analyzerFormat: AVAudioFormat?
     private let collector: Task<String, Error>
     private var converter: AVAudioConverter?
+    private var started = false
+    private var fed = 0
 
-    init() async throws {
+    /// `contextualStrings` are vocabulary hints (names, jargon) that bias
+    /// recognition towards those spellings; the personal dictionary goes
+    /// here. They are applied before the model is prepared.
+    init(contextualStrings: [String] = []) async throws {
+        let clock = Launch.Stopwatch()
         let locale = await Self.pickLocale()
         let transcriber = SpeechTranscriber(
             locale: locale,
@@ -26,6 +38,7 @@ final class StreamingTranscriber {
             compatibleWith: [transcriber])
 
         let (stream, continuation) = AsyncStream.makeStream(of: AnalyzerInput.self)
+        self.stream = stream
         input = continuation
 
         collector = Task {
@@ -36,11 +49,33 @@ final class StreamingTranscriber {
             return text
         }
 
+        if !contextualStrings.isEmpty {
+            let context = AnalysisContext()
+            context.contextualStrings = [.general: contextualStrings]
+            do {
+                try await analyzer.setContext(context)
+            } catch {
+                Log.info("Murmur: recogniser rejected the dictionary hints: \(error)")
+            }
+        }
+
+        // Loads the model now rather than on the first buffer.
+        try await analyzer.prepareToAnalyze(in: analyzerFormat)
+        Log.info("Murmur: transcriber prepared in \(clock.ms) ms")
+    }
+
+    /// Starts analysing whatever has been fed so far and everything after.
+    func begin() async throws {
+        guard !started else { return }
+        started = true
+        let clock = Launch.Stopwatch()
         try await analyzer.start(inputSequence: stream)
+        Log.info("Murmur: analyzer started in \(clock.ms) ms")
     }
 
     /// Thread-safe entry point; called from the audio render thread.
     func feed(_ buffer: AVAudioPCMBuffer) {
+        fed += 1
         guard let analyzerFormat, analyzerFormat != buffer.format else {
             input.yield(AnalyzerInput(buffer: buffer))
             return
@@ -55,8 +90,21 @@ final class StreamingTranscriber {
 
     func finish() async throws -> String {
         input.finish()
+        if !started {
+            try await begin()
+        }
+        let clock = Launch.Stopwatch()
         try await analyzer.finalizeAndFinishThroughEndOfInput()
-        return try await collector.value
+        let text = try await collector.value
+        Log.info("Murmur: transcriber fed \(fed) buffers, finalised in \(clock.ms) ms, \(text.count) characters")
+        return text
+    }
+
+    /// Drops the session without producing text.
+    func cancel() async {
+        input.finish()
+        collector.cancel()
+        await analyzer.cancelAndFinishNow()
     }
 
     // MARK: - Locale and model assets
@@ -130,6 +178,25 @@ final class StreamingTranscriber {
             }
         } catch {
             lines.append("Installation threw: \(String(reflecting: error))")
+        }
+
+        do {
+            let clock = Launch.Stopwatch()
+            let session = try await StreamingTranscriber()
+            lines.append("Transcriber prepare: \(clock.ms) ms")
+            let startClock = Launch.Stopwatch()
+            try await session.begin()
+            lines.append("Analyzer start: \(startClock.ms) ms")
+            await session.cancel()
+        } catch {
+            lines.append("Transcriber init threw: \(String(reflecting: error))")
+        }
+
+        lines.append("Input devices:")
+        let recording = AudioDevices.resolveRecordingDevice()
+        for device in AudioDevices.inputDevices() {
+            let marker = device.id == recording?.id ? " <- Murmur records from this" : ""
+            lines.append("  \(device.name) [uid \(device.uid), builtIn=\(device.isBuiltIn), bluetooth=\(device.isBluetooth)]\(marker)")
         }
         return lines.joined(separator: "\n")
     }

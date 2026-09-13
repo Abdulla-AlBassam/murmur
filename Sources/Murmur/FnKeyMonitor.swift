@@ -6,6 +6,7 @@ import AppKit
 final class FnKeyMonitor {
     var onFnDown: (() -> Void)?
     var onFnUp: (() -> Void)?
+    var onReady: (() -> Void)?
 
     private var tap: CFMachPort?
     private var runLoopSource: CFRunLoopSource?
@@ -17,6 +18,7 @@ final class FnKeyMonitor {
     func startWithRetry() {
         if start() {
             Log.info("Murmur: event tap started immediately")
+            onReady?()
             return
         }
         Log.info("Murmur: event tap unavailable, retrying… \(Self.permissionSummary())")
@@ -31,6 +33,7 @@ final class FnKeyMonitor {
                 timer.invalidate()
                 self.retryTimer = nil
                 Log.info("Murmur: event tap started after \(attempts) retries")
+                self.onReady?()
             } else if attempts >= 3 && AXIsProcessTrusted() {
                 // The grant exists but this process predates it; macOS only
                 // honours it for taps created by a fresh process. Relaunch
@@ -44,7 +47,20 @@ final class FnKeyMonitor {
         }
     }
 
-    private static let relaunchMarker = "--post-grant-relaunch"
+    static let relaunchMarker = "--post-grant-relaunch"
+
+    func stop() {
+        retryTimer?.invalidate()
+        retryTimer = nil
+        if let tap {
+            CGEvent.tapEnable(tap: tap, enable: false)
+            if let runLoopSource {
+                CFRunLoopRemoveSource(CFRunLoopGetMain(), runLoopSource, .commonModes)
+            }
+        }
+        tap = nil
+        runLoopSource = nil
+    }
 
     private static func relaunchAfterGrant() {
         guard !CommandLine.arguments.contains(relaunchMarker) else {

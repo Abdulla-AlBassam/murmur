@@ -18,9 +18,14 @@ enum FileTranscriber {
 
         let session: StreamingTranscriber
         do {
-            session = try await StreamingTranscriber()
+            session = try await StreamingTranscriber(contextualStrings: DictionaryStore.currentTerms())
         } catch {
             throw Labelled("session init", error)
+        }
+        do {
+            try await session.begin()
+        } catch {
+            throw Labelled("session begin", error)
         }
         log("Session started")
 
