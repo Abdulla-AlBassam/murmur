@@ -1,77 +1,68 @@
 # Murmur
 
-Push-to-talk dictation for macOS. Hold **fn**, speak, release: clean text appears. Simple as that. Wispr Flow open sourced version, if you will. Everything runs on-device; audio and transcripts never leave the Mac. No accounts, no API keys, no network calls.
+Push-to-talk dictation for macOS. Hold **fn**, speak, release: clean text appears in whichever app has focus. Simple as that. Wispr Flow open sourced version, if you will. Everything runs on-device. Audio and transcripts never leave the Mac, and there are no accounts, API keys or network calls.
 
-## How it works
-
-1. A listen-only `CGEventTap` watches the fn key globally.
-2. While fn is held, `AVCaptureSession` captures the microphone and streams it into `SpeechAnalyzer`/`SpeechTranscriber`, the on-device speech recognition introduced in macOS 26. A transcriber is kept warm while idle, and audio is queued from the first millisecond, so nothing at the start of a sentence is lost. The personal dictionary is passed to the recogniser as vocabulary hints (`AnalysisContext.contextualStrings`); in testing with synthesised speech this made no measurable difference, so the deterministic casing pass after polishing remains the reliable part.
-3. The raw transcript is polished by Apple's on-device Foundation Models LLM: fillers go, spoken corrections are applied ("at 4pm, wait no, at 3pm" becomes "at 3pm"), punctuation and capitalisation are added, and obvious emails and lists are laid out. The model is shown worked examples and its output is checked against the input; if it invents words, drops too much, or replies instead of editing, the plain transcript is inserted instead. Polishing can be switched off in Settings.
-4. The result is pasted into the focused app via the pasteboard and a synthesised ⌘V, then your previous clipboard is restored.
-
-Also included: a main window with setup status, settings, dictation history (last 100 entries, stored locally as JSON) and a personal dictionary for names and jargon the recogniser fumbles; launch at login; a menu bar item.
-
-## Microphone and headphones
-
-Murmur records from the **built-in microphone** by default and never touches the system default input or output. This matters for Bluetooth headphones: the moment any app opens a headset's microphone, macOS drops the headset from its high-quality music profile to the low-bandwidth hands-free profile, which is why playback sounds washed out. Murmur only opens a microphone while fn is held, tears the audio engine down as soon as you release it (and on cancel, error and quit), and does not use the headset mic unless you pick it in Settings → Microphone.
-
-The hands-free profile also records at telephone quality, so recognition accuracy is noticeably worse through a Bluetooth headset than through the built-in microphone. Prefer the built-in microphone unless you have to use the headset.
-
-Every CoreAudio call runs off the main thread under a deadline. If the chosen microphone cannot be opened, or the engine runs for 1.5 s without delivering any audio (typical while a headset switches profiles), Murmur retries once and then falls back to the built-in microphone for that dictation. Whatever happened is shown in the Status pane.
+Murmur is an early build. It works well enough for daily use, but expect rough edges, and please report what breaks.
 
 ## Requirements
 
 - Apple silicon Mac running macOS 26 (Tahoe) or later
-- Apple Intelligence enabled.
-- Xcode 26 (Swift 6.2 toolchain), to build from source
+- Apple Intelligence enabled
+- Xcode 26, to build from source
 
-## First run
+## Install
 
-1. Open Murmur. The main window shows every setup step and its state.
-2. Grant **Accessibility** when prompted (needed for the fn hotkey and the paste). Murmur relaunches itself once after the grant so macOS honours it.
-3. Grant **Microphone** on your first dictation, or from the Status pane.
-4. In System Settings → Keyboard, set "Press 🌐 key to" to **Do Nothing** so macOS stays out of the way.
-
-Closing the window leaves Murmur running in the menu bar; opening it again from Spotlight, Launchpad or the Dock brings the window back. **Quit Murmur** (menu bar or ⌘Q) stops everything.
-
-Only one Murmur runs at a time. Launching a second copy (for example a fresh development build while an installed copy is running) brings the running one forward and quits; otherwise both would react to fn and both would paste.
-
-## Build and run
+There is no packaged download yet, so build it yourself:
 
 ```sh
+git clone https://github.com/Abdulla-AlBassam/murmur.git
+cd murmur
 ./build.sh
 open build/Murmur.app
 ```
 
-`build.sh` signs with your Apple Development certificate if one is in your keychain, otherwise ad-hoc (functional, but macOS forgets the permission grants on every rebuild). Either way the bundle gets the hardened runtime and the entitlements in `Resources/Murmur.entitlements`, so a development build behaves like the release.
+`build.sh` signs with an Apple Development certificate if one is in your keychain, otherwise ad-hoc. Ad-hoc builds work, but macOS forgets the permission grants every time you rebuild. If you want Murmur in Applications, move `build/Murmur.app` there and keep only that copy: two copies on disk show up twice in Spotlight and Accessibility settings.
 
-Keep a single copy of `Murmur.app` on disk. LaunchServices registers every bundle it sees, so a second copy shows up twice in Spotlight and Accessibility settings and can end up running alongside the first.
+## First run
 
-Launch and readiness timings are written to `~/Library/Logs/Murmur.log` (`launch milestone …`), along with per-dictation timings such as how long after fn-down the microphone opened.
+1. Open Murmur. The main window lists every setup step and whether it is done.
+2. Grant **Accessibility** when prompted. Murmur needs it to see the fn key and to paste. It relaunches itself once after the grant so macOS honours it.
+3. Grant **Microphone** on your first dictation, or from the Status pane.
+4. In System Settings → Keyboard, set "Press 🌐 key to" to **Do Nothing**, so macOS does not open the emoji picker or switch input sources when you hold fn.
 
-## Release (signed, notarised DMG)
+Then hold fn, speak, and let go. Closing the window leaves Murmur running in the menu bar; open it again from Spotlight, Launchpad or the Dock to bring the window back. **Quit Murmur** (menu bar or ⌘Q) stops everything.
 
-One-time setup, as the Apple Developer team K465H4V2A2 account holder:
+Only one Murmur runs at a time. Launching a second copy brings the running one forward and quits.
 
-1. Create a **Developer ID Application** certificate: Xcode → Settings → Accounts → Manage Certificates → + → Developer ID Application. It lands in the login keychain.
-2. Store notarisation credentials (app-specific password from appleid.apple.com):
+## Using it
 
-   ```sh
-   xcrun notarytool store-credentials murmur-notary --apple-id you@example.com --team-id K465H4V2A2
-   ```
+**Polishing.** The raw transcript goes through Apple's on-device model: filler sounds go, spoken corrections are applied ("at 4pm, wait no, at 3pm" becomes "at 3pm"), punctuation and capitalisation are added, and obvious emails and lists are laid out. The output is checked against what you said. If the model invents words, drops too much, or answers instead of editing, the plain transcript is inserted instead. Switch polishing off in Settings if you would rather have the transcript as recognised.
 
-Then:
+**Microphone.** Murmur records from the built-in microphone by default and never changes the system default input or output. You can pick another microphone in Settings, but think twice about Bluetooth headsets: the moment any app opens a headset's microphone, macOS drops it to the low-bandwidth hands-free profile, so music sounds dull while you dictate and recognition accuracy falls to telephone quality. Murmur only holds a microphone while fn is down. If the chosen microphone cannot be opened or delivers no audio, Murmur falls back to the built-in microphone for that dictation and says so in the Status pane.
 
-```sh
-./release.sh                  # build, sign, notarise, staple, DMG in dist/
-./release.sh --skip-notarize  # same pipeline without the Apple round trip
-```
+**History and dictionary.** The History pane keeps the last 100 dictations locally as JSON, handy when a paste lands in the wrong place. The Dictionary pane takes names and jargon the recogniser gets wrong, one per line; they are passed to the recogniser as hints and their spelling is enforced on the result.
 
-The script bumps nothing on its own: set the version in `Resources/Info.plist` first. It writes `dist/Murmur-<version>.dmg` and a SHA-256 alongside it, and removes the intermediate `dist/Murmur.app` so the DMG is the only copy. Users drag Murmur to Applications and follow the first-run steps above.
+**Launch at login** is a toggle in Settings.
 
-## CLI test harness
+## Troubleshooting
 
-The same binary doubles as a headless test tool, no permissions needed:
+- **Nothing happens when I release fn.** Open the main window. The Status pane shows which step is missing and any problem from the last dictation. Check `~/Library/Logs/Murmur.log`, which records every dictation with timings.
+- **The fn key does something else.** Set "Press 🌐 key to" to Do Nothing in Keyboard settings.
+- **Text lands in the wrong app.** Murmur pastes into whatever has keyboard focus when you release fn. The dictation is also in History.
+- **Accuracy is poor.** Use the built-in microphone, speak at a normal pace, and add recurring names to the Dictionary.
+
+## How it works
+
+1. A listen-only `CGEventTap` watches the fn key.
+2. While fn is held, `AVCaptureSession` captures the microphone as mono 16 kHz audio and streams it into `SpeechAnalyzer`/`SpeechTranscriber`, the on-device speech recognition in macOS 26. A transcriber is kept warm while idle and audio is queued from the first millisecond, so the start of a sentence is not lost.
+3. The transcript is polished by the Foundation Models system model, shown worked examples and constrained by guardrails that compare its output with the input.
+4. The result is placed on the pasteboard, ⌘V is synthesised, and your previous clipboard is restored.
+
+Every call into the audio system runs off the main thread under a deadline, so a misbehaving device can fail a dictation but cannot freeze the app.
+
+## Testing from the terminal
+
+The same binary doubles as a headless test tool:
 
 ```sh
 ./build/Murmur.app/Contents/MacOS/Murmur --transcribe recording.aiff
@@ -79,18 +70,24 @@ The same binary doubles as a headless test tool, no permissions needed:
 ./build/Murmur.app/Contents/MacOS/Murmur --clean-suite   # 30 realistic dictations, pass/fail
 ./build/Murmur.app/Contents/MacOS/Murmur --list-inputs
 ./build/Murmur.app/Contents/MacOS/Murmur --diag
-open build/Murmur.app --args --record-test 5             # live mic → transcript, in the log
+open build/Murmur.app --args --record-test 5             # live mic to transcript, in the log
 ```
 
-`--clean-suite` covers emails, lists, questions, commands, names, numbers, corrections and prompt-injection-shaped speech, and reports whether each result came from the model or from the guarded fallback.
+`--clean-suite` covers emails, lists, questions, commands, names, numbers, corrections and prompt-injection-shaped speech, and reports whether each result came from the model or from the guarded fallback. `--record-test` records from the microphone chosen in Settings for the given number of seconds and transcribes it; launch it through `open` so the app's own microphone permission applies, and read the `record-test:` lines in `~/Library/Logs/Murmur.log`.
 
-`--record-test` opens the microphone chosen in Settings exactly as a dictation would, records for the given number of seconds and transcribes it. Launch it through `open` so the bundle's own microphone permission applies; the result is written to `~/Library/Logs/Murmur.log` as `record-test:` lines.
-
-## Tests
+Automated tests:
 
 ```sh
 swift test                                          # unit tests + speech pipeline, ~15 s
 MURMUR_E2E=1 swift test --filter CleanupModelTests  # polishing model suite, ~2 min
 ```
 
-The unit tests cover the guardrails (including real answer-shaped outputs the model produced before the guardrails existed) and the deterministic pre-pass. The speech pipeline test synthesises sentences with `say`, runs them through the same transcriber the app uses and checks the word error rate; it skips itself if the speech model is not installed. The model suite is the `--clean-suite` cases as a test and needs Apple Intelligence.
+The unit tests cover the guardrails and the deterministic pre-pass. The speech pipeline test synthesises sentences with `say`, runs them through the same transcriber the app uses and checks the word error rate; it skips itself if the speech model is not installed. The model suite needs Apple Intelligence.
+
+## Releasing
+
+`release.sh` builds, signs with a Developer ID Application certificate, notarises, staples and writes `dist/Murmur-<version>.dmg`. It needs that certificate in the login keychain and notarisation credentials stored with `xcrun notarytool store-credentials`; the header of the script explains the setup. Set the version in `Resources/Info.plist` first. `./release.sh --skip-notarize` runs the pipeline without the Apple round trip.
+
+## Privacy
+
+Murmur never sends anything anywhere. Recognition and polishing run on the Mac, history and the dictionary are plain files under `~/Library/Application Support/Murmur`, and the log under `~/Library/Logs` contains timings and diagnostics (at most a few words, when a polish is rejected), never whole transcripts.

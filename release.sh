@@ -4,10 +4,10 @@
 # Requirements (one-time):
 #   1. A "Developer ID Application" certificate in the login keychain
 #      (Xcode → Settings → Accounts → Manage Certificates → + → Developer ID
-#      Application, signed in as the team K465H4V2A2 account holder).
+#      Application, signed in to your Apple Developer team).
 #   2. Notarisation credentials stored in the keychain:
 #        xcrun notarytool store-credentials murmur-notary \
-#          --apple-id you@example.com --team-id K465H4V2A2 \
+#          --apple-id <apple id> --team-id <team id> \
 #          --password <app-specific password from appleid.apple.com>
 #
 # Environment overrides:
