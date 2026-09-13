@@ -1,6 +1,6 @@
 # Murmur
 
-Push-to-talk dictation for macOS. Hold **fn**, speak, release: clean text appears in whichever app has focus. Everything runs on-device; audio and transcripts never leave the Mac. No accounts, no API keys, no network calls.
+Push-to-talk dictation for macOS. Hold **fn**, speak, release: clean text appears. Simple as that. Wispr Flow open sourced version, if you will. Everything runs on-device; audio and transcripts never leave the Mac. No accounts, no API keys, no network calls.
 
 ## How it works
 
@@ -22,7 +22,7 @@ Every CoreAudio call runs off the main thread under a deadline. If the chosen mi
 ## Requirements
 
 - Apple silicon Mac running macOS 26 (Tahoe) or later
-- Apple Intelligence enabled, only if you want the polishing pass
+- Apple Intelligence enabled.
 - Xcode 26 (Swift 6.2 toolchain), to build from source
 
 ## First run
