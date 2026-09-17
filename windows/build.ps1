@@ -88,16 +88,23 @@ Remove-Item -Recurse -Force "$root\build", "$root\dist\Murmur" -ErrorAction Sile
 if (-not (Test-Path "$root\dist\Murmur\Murmur.exe")) { throw "PyInstaller did not produce Murmur.exe" }
 
 Step "Smoke-testing the frozen build"
-# Murmur.exe is windowed and has no console of its own, so on a build
-# server its output goes nowhere. Judge it by the exit code, then read what
-# it had to say out of the log it always writes.
-& "$root\dist\Murmur\Murmur.exe" --diag
-$diagExit = $LASTEXITCODE
+# Two traps here, both of which silently turned this check into a no-op
+# before. Murmur.exe is windowed, so it has no console of its own and its
+# output goes nowhere on a build server; and PowerShell does not wait for a
+# windowed process, so the call operator reports on the launch rather than
+# on the program. Start-Process -Wait -PassThru gets the real exit code,
+# and the log it always writes carries what it found.
+$diag = Start-Process -FilePath "$root\dist\Murmur\Murmur.exe" `
+    -ArgumentList "--diag" -Wait -PassThru -NoNewWindow
+$diagExit = $diag.ExitCode
+if ($null -eq $diagExit) { throw "could not read the self-test's exit code" }
 $logFile = Join-Path $env:LOCALAPPDATA "Murmur\Logs\Murmur.log"
 if (Test-Path $logFile) {
     Get-Content $logFile | Select-String "diag: " | ForEach-Object {
-        ($_ -replace '^.*diag: ', '  ') | Write-Host
+        ($_.ToString() -replace '^.*diag: ', '  ') | Write-Host
     }
+} else {
+    Write-Host "  (no log at $logFile)"
 }
 if ($diagExit -ne 0) {
     throw "the packaged build is missing a required module; see the lines above"
