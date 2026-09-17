@@ -88,7 +88,20 @@ Remove-Item -Recurse -Force "$root\build", "$root\dist\Murmur" -ErrorAction Sile
 if (-not (Test-Path "$root\dist\Murmur\Murmur.exe")) { throw "PyInstaller did not produce Murmur.exe" }
 
 Step "Smoke-testing the frozen build"
-& "$root\dist\Murmur\Murmur.exe" --diag | Write-Host
+# Murmur.exe is windowed and has no console of its own, so on a build
+# server its output goes nowhere. Judge it by the exit code, then read what
+# it had to say out of the log it always writes.
+& "$root\dist\Murmur\Murmur.exe" --diag
+$diagExit = $LASTEXITCODE
+$logFile = Join-Path $env:LOCALAPPDATA "Murmur\Logs\Murmur.log"
+if (Test-Path $logFile) {
+    Get-Content $logFile | Select-String "diag: " | ForEach-Object {
+        ($_ -replace '^.*diag: ', '  ') | Write-Host
+    }
+}
+if ($diagExit -ne 0) {
+    throw "the packaged build is missing a required module; see the lines above"
+}
 
 # --------------------------------------------------------------------- models
 

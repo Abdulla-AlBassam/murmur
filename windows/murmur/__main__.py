@@ -19,6 +19,7 @@ from __future__ import annotations
 import sys
 
 from . import paths
+from .__init__ import __version__
 from .log import log, milestone
 
 
@@ -199,7 +200,29 @@ def _record_test(argv: list[str]) -> int:
     return 0
 
 
+#: Everything the app cannot run without. A frozen build that is missing
+#: one of these looks perfectly healthy until the moment it is needed.
+REQUIRED_MODULES = (
+    "numpy",
+    "sounddevice",
+    "soxr",
+    "faster_whisper",
+    "llama_cpp",
+    "PIL",
+    "pystray",
+    "tkinter",
+)
+
+
 def _diagnostics() -> int:
+    """Reports what is installed and where things are kept.
+
+    Returns non-zero when a required module is missing, so that this
+    doubles as the build's self-test. The packaged Murmur.exe has no
+    console of its own and cannot always find one to borrow, so a build
+    server has to judge it by the exit code rather than by what it printed.
+    Every line also goes to the log, which is recoverable either way.
+    """
     import platform
 
     from . import polish, winapi
@@ -207,34 +230,48 @@ def _diagnostics() -> int:
 
     settings = Settings.load()
     choice = polish.resolve_choice(settings.polish_model)
-    print(f"Murmur on {platform.platform()}")
-    print(f"Python {sys.version.split()[0]}")
-    print(f"Push-to-talk key : {winapi.hotkey_for(settings.hotkey).label}")
-    print(f"Cores (physical) : {polish.physical_cores()}")
-    print(f"Memory           : {polish.total_memory_gb():.1f} GB")
-    print(f"Speech model     : {settings.whisper_model}")
-    print(f"Polishing model  : {choice.label} ({'downloaded' if polish.is_downloaded(choice) else 'not downloaded'})")
-    print(f"Settings         : {paths.SETTINGS_FILE}")
-    print(f"Models           : {paths.MODELS_DIR}")
-    print(f"Log              : {paths.LOG_FILE}")
+    frozen = getattr(sys, "frozen", False)
 
-    for module in ("numpy", "sounddevice", "soxr", "faster_whisper", "llama_cpp", "PIL", "pystray"):
+    lines = [
+        f"Murmur {__version__} on {platform.platform()}",
+        f"Python {sys.version.split()[0]}{' (packaged)' if frozen else ''}",
+        f"Push-to-talk key : {winapi.hotkey_for(settings.hotkey).label}",
+        f"Cores (physical) : {polish.physical_cores()}",
+        f"Memory           : {polish.total_memory_gb():.1f} GB",
+        f"Speech model     : {settings.whisper_model}",
+        f"Polishing model  : {choice.label}"
+        f" ({'downloaded' if polish.is_downloaded(choice) else 'not downloaded'})",
+        f"Settings         : {paths.SETTINGS_FILE}",
+        f"Models           : {paths.MODELS_DIR}",
+        f"Log              : {paths.LOG_FILE}",
+    ]
+
+    missing = []
+    for module in REQUIRED_MODULES:
         try:
             __import__(module)
-            print(f"  {module:16s} ok")
+            lines.append(f"  {module:16s} ok")
         except Exception as error:
-            print(f"  {module:16s} MISSING ({error})")
+            missing.append(module)
+            lines.append(f"  {module:16s} MISSING ({error})")
 
     try:
         from .audio import input_devices
 
         devices = input_devices()
-        print(f"Microphones      : {len(devices)}")
+        lines.append(f"Microphones      : {len(devices)}")
         for device in devices:
-            print(f"  {device['name']}{' (default)' if device['is_default'] else ''}")
+            lines.append(f"  {device['name']}{' (default)' if device['is_default'] else ''}")
     except Exception as error:
-        print(f"Microphones      : could not enumerate ({error})")
-    return 0
+        lines.append(f"Microphones      : could not enumerate ({error})")
+
+    if missing:
+        lines.append(f"FAILED: {len(missing)} required module(s) missing: {', '.join(missing)}")
+
+    for line in lines:
+        print(line)
+        log(f"diag: {line}")
+    return 1 if missing else 0
 
 
 if __name__ == "__main__":
