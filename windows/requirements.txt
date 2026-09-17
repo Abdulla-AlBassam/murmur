@@ -1,0 +1,13 @@
+# Murmur for Windows. Install with:
+#   py -3.12 -m pip install -r requirements.txt --extra-index-url https://abetlen.github.io/llama-cpp-python/whl/cpu
+#
+# llama-cpp-python publishes prebuilt py3-none-win_amd64 wheels at that
+# index, so nothing here needs a compiler.
+
+faster-whisper>=1.1.0
+llama-cpp-python>=0.3.35
+sounddevice>=0.4.7
+soxr>=0.5.0
+numpy>=1.26
+pystray>=0.19.5
+pillow>=10.0
