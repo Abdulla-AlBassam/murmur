@@ -13,7 +13,10 @@
 #>
 param(
     [switch]$IncludeModels,
-    [switch]$SkipInstaller
+    [switch]$SkipInstaller,
+    # Which interpreter to build with. The default hunts for a local 3.12;
+    # a build server passes the one it just set up.
+    [string]$Python = ""
 )
 
 $ErrorActionPreference = "Stop"
@@ -26,9 +29,15 @@ function Step($message) { Write-Host "`n==> $message" -ForegroundColor Cyan }
 # ---------------------------------------------------------------- environment
 
 Step "Checking Python"
-$python = (Get-Command py -ErrorAction SilentlyContinue)
-if ($python) { $py = "py -3.12" } else { $py = "python" }
+if ($Python) {
+    $py = $Python
+} elseif (Get-Command py -ErrorAction SilentlyContinue) {
+    $py = "py -3.12"
+} else {
+    $py = "python"
+}
 & cmd /c "$py --version" | Write-Host
+if ($LASTEXITCODE -ne 0) { throw "no usable Python found. Install Python 3.12 from python.org." }
 
 Step "Creating the build environment"
 if (-not (Test-Path "$root\.venv")) { & cmd /c "$py -m venv `"$root\.venv`"" }

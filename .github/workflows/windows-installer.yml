@@ -1,0 +1,46 @@
+# Builds the Windows installer on a Windows machine in the cloud, because
+# PyInstaller and Inno Setup cannot run on a Mac.
+#
+# Push a change under windows/, or press "Run workflow" on the Actions tab.
+# When it finishes, the installer is attached to the run under Artifacts.
+
+name: Windows installer
+
+on:
+  push:
+    branches: [main]
+    paths: ["windows/**", ".github/workflows/windows-installer.yml"]
+  pull_request:
+    paths: ["windows/**"]
+  workflow_dispatch:
+
+jobs:
+  build:
+    runs-on: windows-latest
+    timeout-minutes: 45
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install Inno Setup
+        run: choco install innosetup --no-progress -y
+
+      - name: Build
+        working-directory: windows
+        shell: pwsh
+        # The runner's `py` launcher does not point at the interpreter
+        # setup-python just installed, so name it explicitly.
+        run: ./build.ps1 -Python python
+
+      - name: Collect the installer
+        uses: actions/upload-artifact@v4
+        with:
+          name: MurmurSetup
+          path: windows/dist/MurmurSetup-*.exe
+          if-no-files-found: error
+          retention-days: 30
