@@ -5,6 +5,7 @@ Never whole transcripts: at most a few words, when a polish is rejected.
 
 from __future__ import annotations
 
+import io
 import sys
 import threading
 import time
@@ -26,8 +27,25 @@ def _stream():
                 LOG_FILE.replace(LOG_FILE.with_suffix(".old.log"))
             _handle = LOG_FILE.open("a", encoding="utf-8", buffering=1)
         except OSError:
-            _handle = sys.stderr
+            _handle = io.StringIO()  # never sys.stderr: it may not exist
     return _handle
+
+
+def _is_terminal() -> bool:
+    """Whether there is a terminal worth echoing to.
+
+    A windowed build has no console, so Python leaves sys.stderr as None.
+    Assuming otherwise crashed the packaged app on launch, before it could
+    draw anything or write a word of explanation anywhere the user would
+    find it.
+    """
+    stream = getattr(sys, "stderr", None)
+    if stream is None:
+        return False
+    try:
+        return bool(stream.isatty())
+    except (AttributeError, ValueError, OSError):
+        return False
 
 
 def log(message: str) -> None:
@@ -36,10 +54,13 @@ def log(message: str) -> None:
     with _lock:
         try:
             print(line, file=_stream(), flush=True)
-        except OSError:
+        except (OSError, ValueError):
             pass
-    if sys.stderr.isatty():
-        print(line, file=sys.stderr)
+    if _is_terminal():
+        try:
+            print(line, file=sys.stderr)
+        except (OSError, ValueError):
+            pass
 
 
 def milestone(what: str) -> None:

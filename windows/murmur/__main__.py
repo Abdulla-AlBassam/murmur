@@ -16,6 +16,7 @@ The installed build answers to the same flags: Murmur.exe --diag.
 
 from __future__ import annotations
 
+import os
 import sys
 
 from . import paths
@@ -47,6 +48,9 @@ def main(argv: list[str] | None = None) -> int:
         return _record_test(argv)
     if "--diag" in argv:
         return _diagnostics()
+
+    if os.environ.get("MURMUR_STARTUP_TEST"):
+        return _startup_test()
     return _run_app()
 
 
@@ -71,6 +75,58 @@ def _run_app() -> int:
     app = DictationApp()
     app.start()
     ui.run(app)
+    return 0
+
+
+def _startup_test() -> int:
+    """Everything a double-click does, short of the models and the event
+    loop, then exit with a verdict.
+
+    This is the one path a build server cannot otherwise reach, and it is
+    where the first packaged build died. Launched from Explorer, a windowed
+    build has no console and no arguments, so Python leaves sys.stdout and
+    sys.stderr as None and anything that writes to them raises before the
+    window can appear. Two earlier checks missed it precisely because they
+    passed a flag, and passing a flag makes Murmur go and find a console.
+
+    So: no arguments, no console, and an exit code rather than output.
+    """
+    import time
+    import tkinter as tk
+
+    from . import ui, winapi
+    from .app import DictationApp
+
+    log("startup test: no arguments and no console")
+    print("a print with nowhere to go must not raise")
+
+    app = DictationApp()
+    key = winapi.hotkey_for(app.settings.hotkey).label
+    log(f"startup test: settings loaded, push-to-talk key is {key}")
+
+    root = tk.Tk()
+    root.withdraw()
+    window = ui.MainWindow(root, app)
+    pill = ui.Pill(root)
+    window.refresh()
+    pill.show("listening")
+    pill.show("working")
+    pill.hide()
+    root.update()
+    log("startup test: window and pill built")
+
+    if winapi.IS_WINDOWS:
+        app.listener.start()
+        time.sleep(1.5)
+        installed = app.listener.installed
+        app.listener.stop()
+        log(f"startup test: keyboard hook installed = {installed}")
+        if not installed:
+            log("startup test: FAILED, Windows refused the keyboard hook")
+            return 2
+
+    root.destroy()
+    log("startup test: ok")
     return 0
 
 

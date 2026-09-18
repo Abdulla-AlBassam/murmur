@@ -110,6 +110,28 @@ if ($diagExit -ne 0) {
     throw "the packaged build is missing a required module; see the lines above"
 }
 
+Step "Starting the packaged app the way a double-click does"
+# Deliberately no arguments and no -NoNewWindow. A windowed exe launched
+# this way has no console at all, which is how Explorer starts it and the
+# one set of conditions the checks above cannot reproduce: passing a flag
+# makes Murmur attach to a console, and attaching to a console hides every
+# bug that comes from not having one.
+$env:MURMUR_STARTUP_TEST = "1"
+try {
+    $startup = Start-Process -FilePath "$root\dist\Murmur\Murmur.exe" -Wait -PassThru
+    $startupExit = $startup.ExitCode
+} finally {
+    Remove-Item Env:\MURMUR_STARTUP_TEST -ErrorAction SilentlyContinue
+}
+if (Test-Path $logFile) {
+    Get-Content $logFile | Select-String "startup test: " | ForEach-Object {
+        ($_.ToString() -replace '^.*Murmur: ', '  ') | Write-Host
+    }
+}
+if ($startupExit -ne 0) {
+    throw "the packaged app failed to start when launched without a console (exit $startupExit)"
+}
+
 # --------------------------------------------------------------------- models
 
 if ($IncludeModels) {

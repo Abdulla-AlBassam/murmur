@@ -175,6 +175,13 @@ class HotkeyListener:
     def hotkey(self) -> Hotkey:
         return self._hotkey
 
+    @property
+    def installed(self) -> bool:
+        """Whether the hook is in place. False means Windows refused it,
+        which is the difference between Murmur working and Murmur sitting
+        there looking healthy and ignoring the key."""
+        return self._hook is not None
+
     def start(self) -> None:
         _require_windows()
         if self._thread:
